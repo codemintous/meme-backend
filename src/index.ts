@@ -10,6 +10,8 @@ import morgan from 'morgan';
 import authRoutes from './routes/auth';
 import agentRoutes from './routes/agent';
 import memeRoutes from './routes/meme';
+import imageRoutes from './routes/imageRoutes';
+import historyRoutes from './routes/historyRoutes';
 import { auth } from './middleware/auth';
 import { IUser } from './models/User';
 
@@ -40,6 +42,8 @@ mongoose.connect(process.env.MONGODB_URI!)
 app.use('/api/auth', authRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/memes', memeRoutes);
+app.use('/api/images', imageRoutes);
+app.use('/api/history', historyRoutes);
 
 // Protected routes
 app.get('/api/protected', auth, (req: Request, res: Response) => {

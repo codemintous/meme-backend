@@ -1,13 +1,11 @@
 import { Request, Response } from 'express';
 import { AgentKitService, Agent, AgentConfig } from '../services/AgentKitService';
-import { OpenAI } from 'openai';
 import Meme from '../models/Meme';
 
 const agentService = new AgentKitService();
 let agentInstance: Agent | null = null;
 let agentConfig: AgentConfig | null = null;
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Initialize agent on startup
 (async () => {
@@ -60,7 +58,12 @@ export const chatWithAgent = async (req: Request, res: Response) => {
     
     Respond in a way that matches your personality and characteristics.`;
 
-    const response = await agentService.chat(message, systemMessage);
+    const userId = req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const response = await agentService.chat(message, systemMessage, userId.toString(), agentId);
 
     res.json({
       message: 'Chat response received',
@@ -148,7 +151,12 @@ export const generateImage = async (req: Request, res: Response) => {
     }
 
     const enhancedPrompt = `Create an image in the style of ${meme.name}, who is ${meme.personality}. ${prompt}`;
-    const imageUrl = await agentService.generateImage(enhancedPrompt);
+    const userId = req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const imageUrl = await agentService.generateImage(enhancedPrompt, userId.toString(), agentId);
 
     res.json({
       message: 'Image generated successfully',

@@ -1,16 +1,17 @@
-import { ChatOpenAI } from 'langchain/chat_models/openai';
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { PromptTemplate } from 'langchain/prompts';
 import { StructuredOutputParser } from 'langchain/output_parsers';
 import { z } from 'zod';
 
 export class LangChainService {
-  private model: ChatOpenAI;
+  private model: ChatGoogleGenerativeAI;
   private parser: StructuredOutputParser<typeof memeSchema>;
 
   constructor() {
-    this.model = new ChatOpenAI({
+    this.model = new ChatGoogleGenerativeAI({
+      apiKey: process.env.GEMINI_API_KEY, // Make sure to set this environment variable
       temperature: 0.7,
-      modelName: 'gpt-4',
+      modelName: "gemini-2.0-flash", // Or other Gemini model
     });
 
     this.parser = StructuredOutputParser.fromZodSchema(memeSchema);

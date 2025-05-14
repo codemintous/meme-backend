@@ -1,4 +1,6 @@
-import { OpenAI } from 'openai';
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import ChatHistory from '../models/ChatHistory';
+import ImageHistory from '../models/ImageHistory';
 
 export interface Agent {
   id: string;
@@ -24,61 +26,75 @@ export interface AgentConfig {
 }
 
 export class AgentKitService {
-  private openai: OpenAI;
+  private genAI: GoogleGenerativeAI;
   private agents: Map<string, Agent>;
 
   constructor() {
     console.log('Environment variables:', {
-      OPENAI_API_KEY_LENGTH: process.env.OPENAI_API_KEY?.length,
-      HAS_OPENAI_API_KEY: !!process.env.OPENAI_API_KEY
+      GEMINI_API_KEY_LENGTH: process.env.GEMINI_API_KEY?.length,
+      HAS_GEMINI_API_KEY: !!process.env.GEMINI_API_KEY
     });
 
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      throw new Error('OPENAI_API_KEY is not set in environment variables');
+      throw new Error('GEMINI_API_KEY is not set in environment variables');
     }
-    this.openai = new OpenAI({ apiKey });
+    this.genAI = new GoogleGenerativeAI(apiKey);
     this.agents = new Map();
   }
 
-  async chat(message: string, systemMessage: string): Promise<string> {
+  async chat(message: string, systemMessage: string, userId: string, agentId: string): Promise<string> {
     try {
-      const completion = await this.openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [
-          { role: "system", content: systemMessage },
-          { role: "user", content: message }
+      const model = this.genAI.getGenerativeModel({ model: "gemini-2.0-flash"});
+      const chat = model.startChat({
+        history: [
+          { role: "user", parts: [{text: systemMessage}] },
+          { role: "model", parts: [{text: "Okay, I understand my role."}] }, // Priming the model
         ],
-        temperature: 0.7,
-        max_tokens: 500
+        generationConfig: {
+          maxOutputTokens: 500,
+          temperature: 0.7,
+        }
       });
-
-      return completion.choices[0].message.content || 'No response generated';
+      const result = await chat.sendMessage(message);
+      const response = result.response;
+      return response.text();
     } catch (error) {
       console.error('Error in chat:', error);
       throw new Error('Failed to generate chat response');
     }
   }
 
-  async generateImage(prompt: string): Promise<string> {
+  async generateImage(prompt: string, userId: string, agentId: string): Promise<string> {
     try {
-      const response = await this.openai.images.generate({
-        model: "dall-e-3",
-        prompt: prompt,
-        n: 1,
-        size: "1024x1024",
-        quality: "standard",
-        style: "vivid"
-      });
+      const model = this.genAI.getGenerativeModel({ model: "imagen-001" }); // Or the latest appropriate Imagen model for Gemini
+      const result = await model.generateContent(prompt);
 
-      if (!response.data || response.data.length === 0) {
-        throw new Error('No image was generated');
+      // Safely access the image URI
+      const candidates = result?.response?.candidates;
+      const firstCandidate = candidates && candidates.length > 0 ? candidates[0] : undefined;
+      const parts = firstCandidate?.content?.parts;
+      const firstPart = parts && parts.length > 0 ? parts[0] : undefined;
+      
+      let imageUrl: string | undefined = undefined;
+      if (firstPart?.fileData) {
+        imageUrl = firstPart.fileData.fileUri; // Prefer fileUri as per common SDK patterns
       }
 
-      const imageUrl = response.data[0].url;
       if (!imageUrl) {
-        throw new Error('Generated image URL is missing');
+        console.error("Gemini API Response (Full):", JSON.stringify(result, null, 2));
+        if (firstPart?.fileData) {
+          console.error("Gemini API Response (fileData part):", JSON.stringify(firstPart.fileData, null, 2));
+        }
+        throw new Error('Generated image URL is missing or in an unexpected format. Check console for API response details.');
       }
+      // Store image generation history
+      await ImageHistory.create({
+        userId,
+        agentId,
+        prompt,
+        imageUrl
+      });
 
       return imageUrl;
     } catch (error) {
@@ -112,24 +128,24 @@ export class AgentKitService {
 
   async runChatMode(agent: Agent, config: AgentConfig, message: string) {
     try {
-      // Use OpenAI to generate a response
-      const completion = await this.openai.chat.completions.create({
-        model: config.model,
-        messages: [
+      // Use Gemini to generate a response
+      const model = this.genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+      const chat = model.startChat({
+        history: [
           {
-            role: 'system',
-            content: `You are ${agent.name}, ${agent.description}. Your personality is ${agent.metadata.personality}.`
+            role: "user",
+            parts: [{ text: `You are ${agent.name}, ${agent.description}. Your personality is ${agent.metadata.personality}.` }]
           },
-          {
-            role: 'user',
-            content: message
-          }
+          { role: "model", parts: [{text: "Okay, I understand my role."}] }, // Priming the model
         ],
-        max_tokens: config.maxTokens,
-        temperature: config.temperature
+        generationConfig: {
+          maxOutputTokens: config.maxTokens,
+          temperature: config.temperature
+        }
       });
-
-      return completion.choices[0].message.content;
+      const result = await chat.sendMessage(message);
+      const response = result.response;
+      return response.text();
     } catch (error) {
       console.error('Error in chat mode:', error);
       throw new Error('Failed to process chat message');
