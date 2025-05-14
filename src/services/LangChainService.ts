@@ -1,6 +1,6 @@
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { PromptTemplate } from 'langchain/prompts';
-import { StructuredOutputParser } from 'langchain/output_parsers';
+import { PromptTemplate } from '@langchain/core/prompts';
+import { StructuredOutputParser } from '@langchain/core/output_parsers';
 import { z } from 'zod';
 
 export class LangChainService {

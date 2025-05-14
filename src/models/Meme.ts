@@ -13,6 +13,7 @@ export interface Meme extends Document {
   personality: string;
   creator: string;
   tokenDetails: TokenDetails;
+  agentContractAddress: string;
   profileImageUrl: string;
   coverImageUrl: string;
   likes: number;
@@ -30,10 +31,11 @@ export interface Meme extends Document {
 }
 
 const memeSchema = new Schema<Meme>({
-  name: { type: String },
-  description: { type: String },
-  personality: { type: String },
-  creator: { type: String },
+  name: { type: String, required: true },
+  description: { type: String, required: true },
+  personality: { type: String, required: true },
+  creator: { type: String, required: true },
+  agentContractAddress: { type: String, required: true },
   tokenDetails: {
     tokenAddress: { type: String },
     name: { type: String },
