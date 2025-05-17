@@ -33,9 +33,9 @@ export interface Meme extends Document {
 const memeSchema = new Schema<Meme>({
   name: { type: String, required: true },
   description: { type: String, required: true },
-  personality: { type: String, required: true },
+  personality: { type: String, required: false },
   creator: { type: String, required: true },
-  agentContractAddress: { type: String, required: true },
+  agentContractAddress: { type: String, required: false },
   tokenDetails: {
     tokenAddress: { type: String },
     name: { type: String },

@@ -45,6 +45,11 @@ app.use('/api/memes', memeRoutes);
 app.use('/api/images', imageRoutes);
 app.use('/api/history', historyRoutes);
 
+// Simple 404 handler
+app.use((_req, res) => {
+  res.status(404).json({ message: 'Route not found' });
+});
+
 // Protected routes
 app.get('/api/protected', auth, (req: Request, res: Response) => {
   res.json({ message: 'This is a protected route', user: req.user });

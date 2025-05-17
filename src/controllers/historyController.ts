@@ -35,8 +35,10 @@ export const getImageHistory = async (req: Request, res: Response) => {
     try {
         const userId = req.user?._id;
         const { agentId } = req.query;
+        console.log('Getting image history with params:', { userId, agentId });
 
         if (!userId) {
+            console.log('No authenticated user found');
             return res.status(401).json({ error: 'User not authenticated' });
         }
 
@@ -44,10 +46,12 @@ export const getImageHistory = async (req: Request, res: Response) => {
             userId: userId,
             ...(agentId ? { agentId: agentId } : {})
         };
+        console.log('Executing image history query:', query);
 
         const history = await ImageHistory.find(query)
             .sort({ createdAt: -1 }) // Most recent first
             .limit(20);  // Limit to last 20 images
+        console.log('Found image history entries:', history.length);
 
         res.json(history);
     } catch (error) {
@@ -155,5 +159,149 @@ export const getAllAgentImages = async (req: Request, res: Response) => {
     } catch (error) {
         console.error('Error fetching agent images:', error);
         res.status(500).json({ error: 'Failed to fetch agent images' });
+    }
+};
+
+// Get combined chat history with flexible filtering
+export const getCombinedChatHistory = async (req: Request, res: Response) => {
+    try {
+        const { agentId, userAddress } = req.query;
+        let query: any = {};
+        console.log('Getting combined chat history with params:', { agentId, userAddress });
+
+        // If userAddress is provided, find the user and add to query
+        if (userAddress) {
+            const user = await User.findOne({ userAddress });
+            if (!user) {
+                console.log('User not found for address:', userAddress);
+                return res.status(404).json({ error: 'User not found' });
+            }
+            query.userId = user._id;
+            console.log('Found user:', user._id);
+        } else {
+            // If no userAddress provided, use the authenticated user's ID
+            const userId = req.user?._id;
+            if (!userId) {
+                console.log('No authenticated user found');
+                return res.status(401).json({ error: 'User not authenticated' });
+            }
+            query.userId = userId;
+            console.log('Using authenticated user:', userId);
+        }
+
+        // Add agent filter if provided
+        if (agentId) {
+            query.agentId = agentId;
+            console.log('Filtering by agent:', agentId);
+        }
+
+        console.log('Executing query:', query);
+        const conversations = await ChatHistory.find(query)
+            .sort({ updatedAt: -1 }) // Most recent conversations first
+            .limit(50);  // Limit to last 50 conversations
+
+        // Flatten messages from all conversations
+        const allMessages = conversations.flatMap(conv => 
+            conv.messages.map(msg => ({
+                conversationId: conv.conversationId,
+                message: msg.message,
+                response: msg.response,
+                imageUrl: msg.imageUrl,
+                timestamp: msg.timestamp
+            }))
+        ).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+         .slice(0, 100); // Limit to last 100 messages
+
+        console.log('Found chat history entries:', allMessages.length);
+
+        // Get agent details if agentId is provided
+        let agentDetails = null;
+        if (agentId) {
+            const meme = await Meme.findById(agentId);
+            if (meme) {
+                agentDetails = {
+                    name: meme.name,
+                    description: meme.description,
+                    personality: meme.personality,
+                    tokenDetails: meme.tokenDetails
+                };
+                console.log('Found agent details:', agentDetails);
+            }
+        }
+
+        res.json({
+            conversations: conversations.map(conv => ({
+                conversationId: conv.conversationId,
+                createdAt: conv.createdAt,
+                updatedAt: conv.updatedAt,
+                messageCount: conv.messages.length
+            })),
+            messages: allMessages,
+            agentDetails,
+            totalMessages: allMessages.length
+        });
+    } catch (error) {
+        console.error('Error fetching combined chat history:', error);
+        res.status(500).json({ error: 'Failed to fetch chat history' });
+    }
+};
+
+// Get images filtered by user address and agent
+export const getFilteredImages = async (req: Request, res: Response) => {
+    try {
+        const { userAddress, agentId } = req.query;
+        console.log('Getting filtered images with params:', { userAddress, agentId });
+
+        if (!userAddress) {
+            return res.status(400).json({ error: 'User address is required' });
+        }
+
+        // Find the user by their wallet address
+        const user = await User.findOne({ userAddress: userAddress });
+        if (!user) {
+            console.log('User not found for address:', userAddress);
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Build query
+        const query: any = { userId: user._id };
+        if (agentId) {
+            query.agentId = agentId;
+        }
+
+        console.log('Executing image query:', query);
+        const images = await ImageHistory.find(query)
+            .sort({ createdAt: -1 }) // Most recent first
+            .limit(50);  // Limit to last 50 images
+
+        // Get agent details if agentId is provided
+        let agentDetails = null;
+        if (agentId) {
+            const meme = await Meme.findById(agentId);
+            if (meme) {
+                agentDetails = {
+                    name: meme.name,
+                    description: meme.description,
+                    personality: meme.personality,
+                    tokenDetails: meme.tokenDetails
+                };
+            }
+        }
+
+        // Set cache control headers to prevent caching
+        res.set({
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        });
+
+        res.json({
+            images,
+            agentDetails,
+            totalImages: images.length
+        });
+    } catch (error) {
+        console.error('Error fetching filtered images:', error);
+        res.status(500).json({ error: 'Failed to fetch images' });
     }
 };

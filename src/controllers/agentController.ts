@@ -44,7 +44,7 @@ export const createAgent = async (req: Request, res: Response) => {
 
 export const chatWithAgent = async (req: Request, res: Response) => {
   try {
-    const { agentId, message } = req.body;
+    const { agentId, message, imageUrl } = req.body;
     const meme = await Meme.findById(agentId);
 
     if (!meme) {
@@ -63,11 +63,12 @@ export const chatWithAgent = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const response = await agentService.chat(message, systemMessage, userId.toString(), agentId);
+    const response = await agentService.chat(message, systemMessage, userId.toString(), agentId, imageUrl);
 
     res.json({
       message: 'Chat response received',
       response: response,
+      imageUrl: imageUrl,
       agent: {
         name: meme.name,
         description: meme.description,
@@ -157,6 +158,20 @@ export const generateImage = async (req: Request, res: Response) => {
     }
 
     const imageUrl = await agentService.generateImage(enhancedPrompt, userId.toString(), agentId);
+
+    // After generating image, save a chat entry with the image
+    const systemMessage = `You are ${meme.name}, a meme agent with the following characteristics: 
+    - Description: ${meme.description}
+    - Personality: ${meme.personality}
+    - Token: ${meme.tokenDetails.name} (${meme.tokenDetails.symbol})`;
+
+    await agentService.chat(
+      `Generated image with prompt: ${prompt}`,
+      systemMessage,
+      userId.toString(),
+      agentId,
+      imageUrl
+    );
 
     res.json({
       message: 'Image generated successfully',

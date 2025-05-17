@@ -6,10 +6,15 @@ import {
     getAgentChatHistory,
     getAgentImageHistory,
     getImagesByUserAddress,
-    getAllAgentImages
+    getAllAgentImages,
+    getCombinedChatHistory,
+    getFilteredImages
 } from '../controllers/historyController';
 
 const router = express.Router();
+
+// Combined chat history route (requires authentication)
+router.get('/combined-chat', auth, getCombinedChatHistory);
 
 // User's personal history routes (requires authentication)
 router.get('/chat', auth, getChatHistory);
@@ -24,5 +29,8 @@ router.get('/user/:userAddress/images', getImagesByUserAddress);
 
 // Get all images for an agent with meme details
 router.get('/agent/:agentId/all-images', getAllAgentImages);
+
+// Get filtered images by user address and agent
+router.get('/filtered-images', getFilteredImages);
 
 export default router;

@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 import ChatHistory from '../models/ChatHistory';
 import ImageHistory from '../models/ImageHistory';
 
@@ -26,39 +26,76 @@ export interface AgentConfig {
 }
 
 export class AgentKitService {
-  private genAI: GoogleGenerativeAI;
+  private openai: OpenAI;
   private agents: Map<string, Agent>;
 
   constructor() {
     console.log('Environment variables:', {
-      GEMINI_API_KEY_LENGTH: process.env.GEMINI_API_KEY?.length,
-      HAS_GEMINI_API_KEY: !!process.env.GEMINI_API_KEY
+      XAI_API_KEY_LENGTH: process.env.XAI_API_KEY?.length,
+      HAS_XAI_API_KEY: !!process.env.XAI_API_KEY
     });
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.XAI_API_KEY;
     if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not set in environment variables');
+      throw new Error('XAI_API_KEY is not set in environment variables');
     }
-    this.genAI = new GoogleGenerativeAI(apiKey);
+    this.openai = new OpenAI({
+      apiKey: apiKey,
+      baseURL: "https://api.x.ai/v1"
+    });
     this.agents = new Map();
   }
 
-  async chat(message: string, systemMessage: string, userId: string, agentId: string): Promise<string> {
+  async chat(message: string, systemMessage: string, userId: string, agentId: string, imageUrl?: string): Promise<string> {
     try {
-      const model = this.genAI.getGenerativeModel({ model: "gemini-2.0-flash"});
-      const chat = model.startChat({
-        history: [
-          { role: "user", parts: [{text: systemMessage}] },
-          { role: "model", parts: [{text: "Okay, I understand my role."}] }, // Priming the model
+      console.log('Starting chat with params:', { message, userId, agentId, imageUrl });
+      
+      const response = await this.openai.chat.completions.create({
+        model: "grok-3-latest",
+        messages: [
+          { role: "system", content: systemMessage },
+          { role: "user", content: message }
         ],
-        generationConfig: {
-          maxOutputTokens: 500,
-          temperature: 0.7,
-        }
+        temperature: 0.7,
+        max_tokens: 500
       });
-      const result = await chat.sendMessage(message);
-      const response = result.response;
-      return response.text();
+      
+      const responseContent = response.choices[0]?.message?.content || 'No response generated';
+      console.log('Received response from AI:', responseContent);
+
+      // Save chat history to database
+      try {
+        // Find the latest conversation for this user and agent
+        let chatHistory = await ChatHistory.findOne({
+          userId,
+          agentId
+        }).sort({ updatedAt: -1 });
+
+        // If no conversation exists or the last message was more than 30 minutes ago, create a new conversation
+        if (!chatHistory || (Date.now() - chatHistory.updatedAt.getTime() > 30 * 60 * 1000)) {
+          chatHistory = await ChatHistory.create({
+            userId,
+            agentId,
+            messages: []
+          });
+        }
+
+        // Add the new message to the conversation
+        chatHistory.messages.push({
+          message,
+          response: responseContent,
+          imageUrl,
+          timestamp: new Date()
+        });
+
+        await chatHistory.save();
+        console.log('Successfully saved chat history:', chatHistory);
+      } catch (saveError) {
+        console.error('Error saving chat history:', saveError);
+        throw saveError;
+      }
+      
+      return responseContent;
     } catch (error) {
       console.error('Error in chat:', error);
       throw new Error('Failed to generate chat response');
@@ -67,34 +104,34 @@ export class AgentKitService {
 
   async generateImage(prompt: string, userId: string, agentId: string): Promise<string> {
     try {
-      const model = this.genAI.getGenerativeModel({ model: "imagen-001" }); // Or the latest appropriate Imagen model for Gemini
-      const result = await model.generateContent(prompt);
-
-      // Safely access the image URI
-      const candidates = result?.response?.candidates;
-      const firstCandidate = candidates && candidates.length > 0 ? candidates[0] : undefined;
-      const parts = firstCandidate?.content?.parts;
-      const firstPart = parts && parts.length > 0 ? parts[0] : undefined;
+      console.log('Starting image generation with params:', { prompt, userId, agentId });
       
-      let imageUrl: string | undefined = undefined;
-      if (firstPart?.fileData) {
-        imageUrl = firstPart.fileData.fileUri; // Prefer fileUri as per common SDK patterns
-      }
+      const response = await this.openai.images.generate({
+        model: "grok-2-image-1212",
+        prompt: prompt
+      });
 
+      const imageUrl = response.data?.[0]?.url;
+      
       if (!imageUrl) {
-        console.error("Gemini API Response (Full):", JSON.stringify(result, null, 2));
-        if (firstPart?.fileData) {
-          console.error("Gemini API Response (fileData part):", JSON.stringify(firstPart.fileData, null, 2));
-        }
+        console.error("X.AI API Response:", JSON.stringify(response, null, 2));
         throw new Error('Generated image URL is missing or in an unexpected format. Check console for API response details.');
       }
+      console.log('Generated image URL:', imageUrl);
+
       // Store image generation history
-      await ImageHistory.create({
-        userId,
-        agentId,
-        prompt,
-        imageUrl
-      });
+      try {
+        const imageHistory = await ImageHistory.create({
+          userId,
+          agentId,
+          prompt,
+          imageUrl
+        });
+        console.log('Successfully saved image history:', imageHistory);
+      } catch (saveError) {
+        console.error('Error saving image history:', saveError);
+        throw saveError;
+      }
 
       return imageUrl;
     } catch (error) {
@@ -128,24 +165,21 @@ export class AgentKitService {
 
   async runChatMode(agent: Agent, config: AgentConfig, message: string) {
     try {
-      // Use Gemini to generate a response
-      const model = this.genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-      const chat = model.startChat({
-        history: [
-          {
-            role: "user",
-            parts: [{ text: `You are ${agent.name}, ${agent.description}. Your personality is ${agent.metadata.personality}.` }]
+      // Use X.AI to generate a response
+      const response = await this.openai.chat.completions.create({
+        model: "grok-3-latest",
+        messages: [
+          { 
+            role: "system", 
+            content: `You are ${agent.name}, ${agent.description}. Your personality is ${agent.metadata.personality}.` 
           },
-          { role: "model", parts: [{text: "Okay, I understand my role."}] }, // Priming the model
+          { role: "user", content: message }
         ],
-        generationConfig: {
-          maxOutputTokens: config.maxTokens,
-          temperature: config.temperature
-        }
+        max_tokens: config.maxTokens,
+        temperature: config.temperature
       });
-      const result = await chat.sendMessage(message);
-      const response = result.response;
-      return response.text();
+      
+      return response.choices[0]?.message?.content || 'No response generated';
     } catch (error) {
       console.error('Error in chat mode:', error);
       throw new Error('Failed to process chat message');
