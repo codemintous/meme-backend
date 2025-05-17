@@ -85,6 +85,174 @@ The project uses TypeScript for type safety and better development experience. T
 - `src/routes/` - API route definitions
 - `src/middleware/` - Custom middleware functions
 
+## Base Components Implementation
+
+### 1. Base Agent Interface
+```typescript
+// src/services/AgentKitService.ts
+export interface Agent {
+  id: string;
+  name: string;
+  description: string;
+  metadata: {
+    personality: string;
+    category: string;
+    socialMediaLinks?: {
+      twitter?: string;
+      instagram?: string;
+      facebook?: string;
+    };
+  };
+  createdAt: Date;
+}
+```
+
+### 2. Base Agent Configuration
+```typescript
+// src/services/AgentKitService.ts
+export interface AgentConfig {
+  maxTokens: number;
+  temperature: number;
+  model: string;
+  actions: string[];
+}
+```
+
+### 3. Base Agent Service
+```typescript
+// src/services/AgentKitService.ts
+export class AgentKitService {
+  private openai: OpenAI;
+  private agents: Map<string, Agent>;
+
+  constructor() {
+    this.openai = new OpenAI({
+      apiKey: process.env.XAI_API_KEY,
+      baseURL: "https://api.x.ai/v1"
+    });
+    this.agents = new Map();
+  }
+
+  async initializeAgent(): Promise<{ agent: Agent; config: AgentConfig }> {
+    const config: AgentConfig = {
+      maxTokens: 500,
+      temperature: 0.7,
+      model: 'gpt-4',
+      actions: ['create_meme', 'edit_meme', 'share_meme', 'analyze_trends']
+    };
+
+    const agent: Agent = {
+      id: 'default',
+      name: 'Default Agent',
+      description: 'A helpful AI assistant',
+      metadata: {
+        personality: 'Friendly and professional',
+        category: 'General'
+      },
+      createdAt: new Date()
+    };
+
+    this.agents.set(agent.id, agent);
+    return { agent, config };
+  }
+}
+```
+
+### 4. Base Model Interfaces
+
+#### User Model
+```typescript
+// src/models/User.ts
+export interface IUser extends Document {
+  username: string;
+  userAddress: string;
+  serverAddress: string;
+  publicKey?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+#### Chat History Model
+```typescript
+// src/models/ChatHistory.ts
+export interface IMessage {
+    message: string;
+    response: string;
+    imageUrl?: string;
+    timestamp: Date;
+}
+
+export interface IChatHistory extends Document {
+    userId: mongoose.Types.ObjectId;
+    agentId: string;
+    conversationId: string;
+    messages: IMessage[];
+    createdAt: Date;
+    updatedAt: Date;
+}
+```
+
+### 5. Base Express Configuration
+```typescript
+// src/index.ts
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+
+const app = express();
+
+// Base middleware setup
+app.use(cors());
+app.use(helmet());
+app.use(morgan('dev'));
+app.use(express.json());
+```
+
+### 6. Base Type Definitions
+```typescript
+// src/types/express.d.ts
+import { IUser } from '../models/User';
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: IUser;
+    }
+  }
+}
+```
+
+### 7. Base Configuration
+```json
+// tsconfig.json
+{
+  "compilerOptions": {
+    "target": "es2018",
+    "module": "commonjs",
+    "lib": ["es2020"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "moduleResolution": "node",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  }
+}
+```
+
+These base components form the foundation of the application, providing:
+- Type-safe agent management
+- Secure API endpoints
+- Structured data models
+- Standardized configuration
+- Type definitions for Express
+- Base middleware setup
+
 ## License
 
 MIT 
